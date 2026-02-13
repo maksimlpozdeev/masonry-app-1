@@ -1,3 +1,7 @@
-[theme]
-base = "light"
-primaryColor = "#E35336"
+[theme.light]
+primaryColor="#d6705c"
+backgroundColor="#FFFFFF"
+
+[theme.dark]
+primaryColor="#d6705c"
+backgroundColor="#151515"
