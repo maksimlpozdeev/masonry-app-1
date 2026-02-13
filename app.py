@@ -23,7 +23,7 @@ def init_session_state():
         st.session_state.force_params = {
             "force": 46.2,
             "moment_x": 2.7,
-            "moment_y": 3.1
+            "moment_y": 5.1
         }
     if "force_node" not in st.session_state:
         st.session_state.force_node = Node(
@@ -39,7 +39,7 @@ def init_session_state():
 # ------------------ Интерфейс: размеры сечения ------------------
 def section_dimensions():
     st.subheader("Размеры сечения")
-    col_form, col_plot = st.columns([1, 2])
+    col_form, col_plot = st.columns([2, 3])
     submit_geom = False
 
     with col_form:
@@ -91,34 +91,35 @@ def section_dimensions():
             st.session_state.force_ok = False
 
     with col_plot:
-        col1, col2 = st.columns([1, 3])
+        col1, col2 = st.columns([1, 2])
         with col1:
-            toggle_dimensions = st.toggle("Размеры", value=True)
-        with col2:
-            toggle_notation = st.toggle("Обозначения", value=True)
+            toggle_dimensions = st.toggle("Размеры", value=False)
 
-        fig = build_image_1(toggle_dimensions, toggle_notation,
-                            st.session_state.geom_params,
-                            st.session_state.main_shape.nodes,
-                            st.session_state.main_shape.center)
-        st.pyplot(fig)
+        fig = build_image_1(
+            toggle_dimensions,
+            st.session_state.geom_params,
+            st.session_state.main_shape.nodes,
+            st.session_state.main_shape.center,
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
 
 
 # ------------------ Интерфейс: внутренние усилия ------------------
 def internal_forces():
     st.subheader("Расчет геометрии сжатой зоны сечения")
-    col_form, col_plot = st.columns([1, 2])
+    col_form, col_plot = st.columns([2, 3])
     submit_force = False
 
     with col_form:
         with st.form("param_form2"):
             st.write("Внутренние усилия")
-            force = st.number_input("Сила $N$, кН", key="force", step=0.1, min_value=1.0,
-                                    value=st.session_state.force_params["force"])
-            moment_x = st.number_input("Момент $M_x$, кНм", key="moment_x", step=0.1,
-                                       value=st.session_state.force_params["moment_x"])
-            moment_y = st.number_input("Момент $M_y$, кНм", key="moment_y", step=0.1,
-                                       value=st.session_state.force_params["moment_y"])
+            st.number_input("Сила $N$, кН", key="force", step=0.1, min_value=1.0,
+                            value=st.session_state.force_params["force"])
+            st.number_input("Момент $M_x$, кНм", key="moment_x", step=0.1,
+                            value=st.session_state.force_params["moment_x"])
+            st.number_input("Момент $M_y$, кНм", key="moment_y", step=0.1,
+                            value=st.session_state.force_params["moment_y"])
             submit_force = st.form_submit_button("Рассчитать")
 
     if submit_force:
@@ -144,12 +145,17 @@ def internal_forces():
 
     with col_plot:
         if st.session_state.geom_ok and st.session_state.force_ok:
-            fig = build_image_2(st.session_state.main_shape.nodes,
-                                st.session_state.red_shape.nodes,
-                                st.session_state.main_shape.center,
-                                st.session_state.red_shape.center,
-                                st.session_state.force_node)
-            st.pyplot(fig)
+            fig = build_image_2(
+                st.session_state.geom_params,
+                st.session_state.main_shape.nodes,
+                st.session_state.red_shape.nodes,
+                st.session_state.main_shape.center,
+                st.session_state.red_shape.center,
+                st.session_state.force_node,
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
         else:
             st.warning("Проведите расчет сжатой зоны", icon="⚠️")
 
@@ -232,5 +238,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
