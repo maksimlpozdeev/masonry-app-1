@@ -165,6 +165,7 @@ def reduce_shape(params: dict, force_node: Node):
                 if n.y == np.max([n.y for n in red_shape.nodes]):
                     n.y += step
 
+
         red_shape.average_nodes(tol=5)
 
         ecc = np.sqrt((force_node.x - red_shape.center.x) ** 2 +
