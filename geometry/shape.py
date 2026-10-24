@@ -146,11 +146,9 @@ def reduce_shape(params: dict, force_node: Node):
     limit_x_max = a1
     limit_y_max = b1 + b2 + b3
 
-    initial_guesses = [
-        (Xc * kx, Yc * ky)
-        for kx in (0.4, 0.7, 0.9)
-        for ky in (0.4, 0.7, 0.9)
-    ]
+    initial_guesses = [(max(2 * Xc - limit_x_max, 0),
+                        max(2 * Yc - limit_y_max, 0))]
+
 
     def geo_params(part, position, x0, y0):
         a, b, cx, cy = objects[part - 1]
