@@ -1,6 +1,8 @@
 from .nodes import Node
 from .rectangle import Rectangle
 import numpy as np
+from scipy.optimize import fsolve
+
 
 class Shape:
     def __init__(self, figure_nodes: list[Node], shapes: list[Rectangle]):
@@ -92,82 +94,157 @@ def build_shape(params: dict):
 
 
 def reduce_shape(params: dict, force_node: Node):
+    a1, b1 = params["a1"], params["b1"]
+    a2, b2, c2 = params["a2"], params["b2"], params["c2"]
+    a3, b3, c3 = params["a3"], params["b3"], params["c3"]
+
+    if a2 + c2 > a1 or a3 + c3 > a1:
+        raise ValueError("некорректные размеры сечения")
+    center = build_shape(params).center
+    Xe = force_node.x - center.x
+    Ye = force_node.y - center.y
+
+    c2_old = c2
+    c3_old = c3
+    b2_old = b2
+    b3_old = b3
+    a2_old = a2
+    a3_old = a3
+
+    if Xe < 0 and Ye >= 0:
+        c2 = a1 - a2 - c2
+        c3 = a1 - a3 - c3
+
+    elif Xe < 0 and Ye < 0:
+        b2 = b3_old
+        b3 = b2_old
+        a2 = a3_old
+        a3 = a2_old
+        c2 = a1 - a3_old - c3_old
+        c3 = a1 - a2_old - c2_old
+
+    elif Xe >= 0 and Ye < 0:
+        b2 = b3_old
+        b3 = b2_old
+        a2 = a3_old
+        a3 = a2_old
+        c2 = c3_old
+        c3 = c2_old
+
+    A_full = a1 * b1 + a2 * b2 + a3 * b3
+    gravity_center_X = (a2 * b2 * (a2 / 2 + c2) + a1 * b1 * a1 / 2 + a3 * b3 * (a3 / 2 + c3)) / A_full
+    gravity_center_Y = (a2 * b2 * (b2 / 2 + b1 + b3) + a1 * b1 * (b1 / 2 + b3) + a3 * b3 * b3 / 2) / A_full
+
+    Xc = gravity_center_X + abs(Xe)
+    Yc = gravity_center_Y + abs(Ye)
+
+    object_1 = (a1, b1, 0, b3)  # ширина, высота, смещение по X, смещение по Y левого нижнего угла
+    object_2 = (a2, b2, c2, b1 + b3)
+    object_3 = (a3, b3, c3, 0)
+    objects = [object_1, object_2, object_3]
+
+    limit_x_max = a1
+    limit_y_max = b1 + b2 + b3
+
+    initial_guesses = [
+        (Xc * kx, Yc * ky)
+        for kx in (0.4, 0.7, 0.9)
+        for ky in (0.4, 0.7, 0.9)
+    ]
+
+    def geo_params(part, position, x0, y0):
+        a, b, cx, cy = objects[part - 1]
+        if position == 1:    # входит полностью
+            area = a * b
+            s_y = area * (cx + a / 2)
+            s_x = area * (cy + b / 2)
+        elif position == 2:  # не входит совсем
+            area = s_y = s_x = 0
+        elif position == 3:  # входит правая часть
+            area = (a + cx - x0) * b
+            s_y = area * (a + cx + x0) / 2
+            s_x = area * (cy + b / 2)
+        elif position == 4:  # входит верхняя часть
+            area = a * (cy + b - y0)
+            s_y = area * (cx + a / 2)
+            s_x = area * (y0 + cy + b) / 2
+        elif position == 5:  # входит правая верхняя часть
+            area = (a + cx - x0) * (cy + b - y0)
+            s_y = area * (a + cx + x0) / 2
+            s_x = area * (y0 + cy + b) / 2
+        else:
+            raise ValueError(f"Неизвестная позиция: {position}")
+        return area, s_y, s_x
+
+    def answer_is_real(part, position, x, y):
+        a, b, cx, cy = objects[part - 1]
+        if position == 1:
+            return 0 <= x <= cx and 0 <= y <= cy
+        elif position == 2:
+            return x >= cx + a or y >= cy + b
+        elif position == 3:
+            return cx <= x <= cx + a and 0 <= y <= cy
+        elif position == 4:
+            return 0 <= x <= cx and cy <= y <= cy + b
+        elif position == 5:
+            return cx <= x <= cx + a and cy <= y <= cy + b
+        else:
+            raise ValueError(f"Неизвестная позиция: {position}")
+
+    def deviation(v, i, n, m):
+        x0, y0 = v
+        area1, s_y1, s_x1 = geo_params(1, i, x0, y0)
+        area2, s_y2, s_x2 = geo_params(2, n, x0, y0)
+        area3, s_y3, s_x3 = geo_params(3, m, x0, y0)
+
+        area = area1 + area2 + area3
+        s_x = s_x1 + s_x2 + s_x3
+        s_y = s_y1 + s_y2 + s_y3
+
+        if area:
+            return s_y / area - Xc, s_x / area - Yc
+        return 1000, 1000
+
+    answers = []
+
+    for i in range(1, 6):
+        for n in range(1, 6):
+            for m in range(1, 6):
+
+                for ig in initial_guesses:
+                    sol, info, ier, msg = fsolve(deviation, ig, args=(i, n, m), full_output=True)
+                    if ier != 1:
+                        continue
+
+                    fx, fy = float(sol[0]), float(sol[1])
+
+                    if not (0 <= fx <= limit_x_max and 0 <= fy <= limit_y_max and fx < Xc and fy < Yc):
+                        continue  # вне сечения
+
+                    if not (answer_is_real(1, i, fx, fy)
+                            and answer_is_real(2, n, fx, fy)
+                            and answer_is_real(3, m, fx, fy)):
+                        continue  # физически невозможно
+
+                    dev_x, dev_y = deviation(sol, i, n, m)
+                    if abs(dev_x) > 0.001 or abs(dev_y) > 0.001:
+                        continue  # остановился не в корне
+
+                    answers.append((fx, fy, i, n, m))
+                    break
+    if not answers:
+        raise ValueError("Все сечение растянуто")
+    fx, fy, i, n, m = answers[0]
 
     red_shape = build_shape(params)
+    for nd in red_shape.nodes:
+        if Xe >= 0:
+            nd.x = max(nd.x, fx)
+        else:
+            nd.x = min(nd.x, limit_x_max - fx)
 
-    dir_x = "center"
-    dir_y = "center"
-
-    if force_node.x > red_shape.center.x:
-        dir_x = "left"
-    if force_node.x < red_shape.center.x:
-        dir_x = "right"
-    if force_node.y > red_shape.center.y:
-        dir_y = "bottom"
-    if force_node.y < red_shape.center.y:
-        dir_y = "top"
-
-    if dir_x == "left":
-        x_min = 2 * force_node.x - max([n.x for n in red_shape.nodes])
-        for n in red_shape.nodes:
-            if n.x < x_min:
-                n.x = x_min
-    if dir_x == "right":
-        x_max = 2 * force_node.x - min([n.x for n in red_shape.nodes])
-        for n in red_shape.nodes:
-            if n.x > x_max:
-                n.x = x_max
-    if dir_y == "bottom":
-        y_min = 2 * force_node.y - max([n.y for n in red_shape.nodes])
-        for n in red_shape.nodes:
-            if n.y < y_min:
-                n.y = y_min
-    if dir_y == "top":
-        y_max = 2 * force_node.y - min([n.y for n in red_shape.nodes])
-        for n in red_shape.nodes:
-            if n.y > y_max:
-                n.y = y_max
-
-    step = 5
-    max_iter = 1000
-    i = 0
-    ecc = np.sqrt((force_node.x - red_shape.center.x) ** 2 +
-                  (force_node.y - red_shape.center.y) ** 2)
-
-    while ecc > 10 and i < max_iter:
-        i += 1
-        for n in red_shape.nodes:
-            if dir_x == "left" and force_node.x > red_shape.center.x:
-                if n.x == np.min([n.x for n in red_shape.nodes]):
-                    n.x += step
-            if dir_x == "left" and force_node.x < red_shape.center.x:
-                if n.x == np.min([n.x for n in red_shape.nodes]):
-                    n.x -= step
-
-            if dir_x == "right" and force_node.x < red_shape.center.x:
-                if n.x == np.max([n.x for n in red_shape.nodes]):
-                    n.x -= step
-            if dir_x == "right" and force_node.x > red_shape.center.x:
-                if n.x == np.max([n.x for n in red_shape.nodes]):
-                    n.x += step
-
-            if dir_y == "bottom" and force_node.y > red_shape.center.y:
-                if n.y == np.min([n.y for n in red_shape.nodes]):
-                    n.y += step
-            if dir_y == "bottom" and force_node.y < red_shape.center.y:
-                if n.y == np.min([n.y for n in red_shape.nodes]):
-                    n.y -= step
-
-            if dir_y == "top" and force_node.y < red_shape.center.y:
-                if n.y == np.max([n.y for n in red_shape.nodes]):
-                    n.y -= step
-            if dir_y == "top" and force_node.y > red_shape.center.y:
-                if n.y == np.max([n.y for n in red_shape.nodes]):
-                    n.y += step
-
-
-        red_shape.average_nodes(tol=5)
-
-        ecc = np.sqrt((force_node.x - red_shape.center.x) ** 2 +
-                      (force_node.y - red_shape.center.y) ** 2)
+        if Ye >= 0:
+            nd.y = max(nd.y, fy)
+        else:
+            nd.y = min(nd.y, limit_y_max - fy)
     return red_shape
